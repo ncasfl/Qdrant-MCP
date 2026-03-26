@@ -1,6 +1,6 @@
-# qdrant_mcp — Qdrant MCP Server for ai-beast
+# qdrant_mcp — Qdrant MCP Server
 
-MCP server exposing ai-beast's Qdrant vector store and GPU-accelerated embedding pipeline as tools for Claude Code, Claude.ai, and OpenClaw.
+MCP server exposing Qdrant vector DB store and GPU-accelerated embedding pipeline as tools for Claude Code, Claude.ai, and OpenClaw.
 
 ## Tools
 
