@@ -1,143 +1,158 @@
-# qdrant_mcp — Qdrant MCP Server for ai-beast
+<p align="center">
+  <h1 align="center">Qdrant MCP Server</h1>
+  <p align="center">
+    Semantic search, document ingestion, and collection management over <a href="https://qdrant.tech">Qdrant</a> — powered by <a href="https://modelcontextprotocol.io">MCP</a>
+  </p>
+</p>
 
-MCP server exposing ai-beast's Qdrant vector store and GPU-accelerated embedding pipeline as tools for Claude Code, Claude.ai, and OpenClaw.
+<p align="center">
+  <a href="#tools">Tools</a> &bull;
+  <a href="#quickstart">Quickstart</a> &bull;
+  <a href="#embedding-providers">Embedding Providers</a> &bull;
+  <a href="#client-configuration">Client Configuration</a> &bull;
+  <a href="#configuration-reference">Configuration</a> &bull;
+  <a href="#docker">Docker</a>
+</p>
+
+---
+
+An [MCP](https://modelcontextprotocol.io) server that exposes your [Qdrant](https://qdrant.tech) vector database as tools for AI assistants. Ingest documents, search semantically, and manage collections — all through natural conversation.
+
+Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk) (Python). Supports **any OpenAI-compatible embedding provider** — local (Ollama, llama.cpp) or cloud (OpenAI, Anthropic, Google, Azure).
+
+## Why
+
+- **Search your documents from any MCP client** — ask "find my notes about X" and get ranked results from Qdrant
+- **Ingest files mid-conversation** — drop a PDF or text file and it's chunked, embedded, and searchable immediately
+- **Provider-agnostic embeddings** — swap between local GPU, local CPU, or cloud APIs by changing one URL
+- **Dual transport** — stdio for Claude Code, streamable HTTP for Claude.ai, OpenClaw, or any HTTP-capable client
 
 ## Tools
 
-| Tool | Description | Annotations |
-|------|-------------|-------------|
-| `qdrant_search` | Semantic search over ingested documents | read-only, idempotent |
-| `qdrant_ingest_text` | Chunk, embed (GPU), and store raw text | write |
+| Tool | Description | Type |
+|------|-------------|------|
+| `qdrant_search` | Semantic search with score threshold and source filtering | read-only |
+| `qdrant_ingest_text` | Chunk, embed, and store raw text | write |
 | `qdrant_ingest_file` | Extract text from PDF/text files, then ingest | write |
-| `qdrant_list_collections` | List all Qdrant collections with stats | read-only, idempotent |
-| `qdrant_collection_info` | Detailed info on a specific collection | read-only, idempotent |
-| `qdrant_delete` | Remove points by ID or source filter | destructive, requires confirm=true |
+| `qdrant_list_collections` | List all collections with point counts and vector config | read-only |
+| `qdrant_collection_info` | Detailed stats on a specific collection | read-only |
+| `qdrant_delete` | Remove points by ID or source filter (requires `confirm=true`) | destructive |
+
+All tools support both **markdown** and **json** response formats.
 
 ## Architecture
 
 ```
-Clients (stdio / HTTP)
-        │
-        ▼
-  qdrant_mcp (FastMCP)     ← this server
-        │
-   ┌────┴────┐
-   ▼         ▼
-Ollama    Qdrant
-:11434    :6333
-(GPU      (vector
-embed)    store)
+┌──────────────────────────────────────────────────┐
+│                   MCP Clients                     │
+│  Claude Code (stdio)  │  Claude.ai / OpenClaw     │
+│                       │  (streamable HTTP :8090)  │
+└──────────┬────────────┴──────────┬────────────────┘
+           │                       │
+           ▼                       ▼
+┌──────────────────────────────────────────────────┐
+│              qdrant_mcp (FastMCP)                  │
+│                                                    │
+│  embeddings.py ──→ Any OpenAI-compatible API       │
+│  tools/        ──→ Qdrant client                   │
+│  rag/lib/      ──→ Chunker, PDF extractor          │
+└──────────┬───────────────────────┬────────────────┘
+           │                       │
+           ▼                       ▼
+   Embedding Provider          Qdrant :6333
+   (Ollama, OpenAI,           (vector store)
+    llama.cpp, etc.)
 ```
 
-Reuses `~/rag/lib/` modules (chunker, embedder, extractor, store) — no code duplication with the CLI pipeline.
+## Prerequisites
 
-## Running
+- **Python 3.10+**
+- **Qdrant** running and accessible (default: `localhost:6333`)
+- **An embedding provider** — any OpenAI-compatible `/v1/embeddings` endpoint (see [Embedding Providers](#embedding-providers))
 
-### Docker (default — used by OpenClaw and Claude.ai)
+## Quickstart
+
+### 1. Clone and install
 
 ```bash
-~/start-qdrant-mcp.sh          # start sidecar container
-~/stop.sh qdrant-mcp            # stop
-~/status.sh                     # check status
+git clone https://github.com/ncasfl/Qdrant-MCP.git
+cd Qdrant-MCP
+pip install -r requirements.txt
+pip install pymupdf  # for PDF support
 ```
 
-Builds from `Dockerfile`, runs with host networking on port 8090.
-
-### Native (development / debugging)
-
-```bash
-~/start-qdrant-mcp.sh --native  # start as Python process
-```
-
-Logs to `~/logs/qdrant-mcp.log` (HTTP mode) or stderr (stdio mode).
-
-### Rebuild after code changes
-
-```bash
-cd ~/qdrant-mcp && sudo docker compose build
-~/stop.sh qdrant-mcp && ~/start-qdrant-mcp.sh
-```
-
-## Client Configuration
-
-### Claude Code (stdio)
-
-Configured in `~/.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "qdrant": {
-      "command": "python3",
-      "args": ["-m", "qdrant_mcp", "--transport", "stdio"],
-      "cwd": "/home/chohman/qdrant-mcp",
-      "env": {
-        "PYTHONPATH": "/home/chohman/qdrant-mcp:/home/chohman"
-      }
-    }
-  }
-}
-```
-
-### Claude.ai (HTTP)
-
-Add as remote MCP server in browser settings:
-- URL: `http://192.168.1.16:8090/mcp`
-
-### OpenClaw (HTTP via mcp-remote bridge)
-
-Configured in `~/Dockerz/openclaw/post-configure.sh` via ACPX plugin:
-
-```python
-config['plugins']['entries']['acpx']['mcpServers'] = {
-    'qdrant': {
-        'command': 'npx',
-        'args': ['mcp-remote', 'http://127.0.0.1:8090/mcp'],
-        'env': {}
-    }
-}
-```
-
-Requires the Docker sidecar running on :8090.
-
-## Configuration
+### 2. Configure your embedding provider
 
 Edit `qdrant_mcp/config.py` or set environment variables:
 
-### Qdrant
+```bash
+# Example: Ollama running locally (default)
+export EMBED_BASE_URL=http://localhost:11434/v1
+export EMBED_MODEL=nomic-embed-text
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `QDRANT_HOST` | `localhost` | Qdrant server host |
-| `QDRANT_PORT` | `6333` | Qdrant REST port |
+# Example: OpenAI
+export EMBED_BASE_URL=https://api.openai.com/v1
+export EMBED_MODEL=text-embedding-3-small
+export EMBED_API_KEY=sk-...
+```
 
-### Embeddings
+### 3. Run the server
 
-Uses any OpenAI-compatible `/v1/embeddings` API. Configure via `config.py` or environment variables.
+**stdio** (for Claude Code):
+```bash
+PYTHONPATH="$(pwd)" python3 -m qdrant_mcp --transport stdio
+```
 
-| Setting | Env Var | Default | Description |
-|---------|---------|---------|-------------|
-| `EMBED_BASE_URL` | `EMBED_BASE_URL` | `http://localhost:11434/v1` | Embedding API base URL |
-| `EMBED_MODEL` | `EMBED_MODEL` | `nomic-embed-text` | Model name |
-| `EMBED_API_KEY` | `EMBED_API_KEY` | _(empty)_ | API key (required for cloud providers) |
-| `EMBED_QUERY_PREFIX` | `EMBED_QUERY_PREFIX` | `search_query: ` | Prefix for search queries |
-| `EMBED_DOCUMENT_PREFIX` | `EMBED_DOCUMENT_PREFIX` | `search_document: ` | Prefix for document chunks |
+**HTTP** (for Claude.ai, OpenClaw, or other HTTP clients):
+```bash
+PYTHONPATH="$(pwd)" python3 -m qdrant_mcp --transport streamable-http --port 8090
+```
 
-### Provider Examples
+### 4. Connect a client
 
-**Ollama** (default — local GPU):
+See [Client Configuration](#client-configuration) below.
+
+## Embedding Providers
+
+The server uses the OpenAI-compatible `/v1/embeddings` API format. This works with a wide range of providers out of the box.
+
+### Local Providers
+
+<details>
+<summary><strong>Ollama</strong> (local GPU/CPU)</summary>
+
 ```bash
 EMBED_BASE_URL=http://localhost:11434/v1
 EMBED_MODEL=nomic-embed-text
+# No API key needed
 ```
 
-**llama-server / llama.cpp** (local CPU):
+Install Ollama and pull a model:
+```bash
+ollama pull nomic-embed-text
+```
+</details>
+
+<details>
+<summary><strong>llama-server / llama.cpp</strong> (local CPU/GPU)</summary>
+
 ```bash
 EMBED_BASE_URL=http://localhost:8080/v1
-EMBED_MODEL=nomic-embed-text
+EMBED_MODEL=your-model-name
+# No API key needed
 ```
 
-**OpenAI**:
+Start llama-server with an embedding model:
+```bash
+llama-server -m your-embedding-model.gguf --embedding --port 8080
+```
+</details>
+
+### Cloud Providers
+
+<details>
+<summary><strong>OpenAI</strong></summary>
+
 ```bash
 EMBED_BASE_URL=https://api.openai.com/v1
 EMBED_MODEL=text-embedding-3-small
@@ -146,7 +161,46 @@ EMBED_QUERY_PREFIX=
 EMBED_DOCUMENT_PREFIX=
 ```
 
-**Azure OpenAI**:
+Models: `text-embedding-3-small` (1536-dim), `text-embedding-3-large` (3072-dim)
+</details>
+
+<details>
+<summary><strong>Anthropic (Claude) via Voyage AI</strong></summary>
+
+Anthropic recommends [Voyage AI](https://www.voyageai.com/) for embeddings:
+
+```bash
+EMBED_BASE_URL=https://api.voyageai.com/v1
+EMBED_MODEL=voyage-3
+EMBED_API_KEY=pa-...
+EMBED_QUERY_PREFIX=
+EMBED_DOCUMENT_PREFIX=
+```
+
+Models: `voyage-3` (1024-dim), `voyage-3-lite` (512-dim), `voyage-code-3` (code-optimized)
+</details>
+
+<details>
+<summary><strong>Google Gemini</strong> (via OpenAI-compatible proxy)</summary>
+
+Use [LiteLLM](https://github.com/BerriAI/litellm) as a proxy to expose Gemini's embedding API in OpenAI format:
+
+```bash
+# Start LiteLLM proxy
+litellm --model gemini/text-embedding-004 --port 4000
+
+# Configure qdrant_mcp
+EMBED_BASE_URL=http://localhost:4000/v1
+EMBED_MODEL=gemini/text-embedding-004
+EMBED_API_KEY=your-gemini-key
+EMBED_QUERY_PREFIX=
+EMBED_DOCUMENT_PREFIX=
+```
+</details>
+
+<details>
+<summary><strong>Azure OpenAI</strong></summary>
+
 ```bash
 EMBED_BASE_URL=https://your-resource.openai.azure.com/openai/deployments/your-deployment
 EMBED_MODEL=text-embedding-3-small
@@ -154,48 +208,186 @@ EMBED_API_KEY=your-azure-key
 EMBED_QUERY_PREFIX=
 EMBED_DOCUMENT_PREFIX=
 ```
+</details>
 
-> **Note:** Asymmetric models like `nomic-embed-text` use different prefixes for queries vs documents.
-> OpenAI and most cloud models are symmetric — set both prefixes to empty strings.
+> **Asymmetric vs symmetric models:** Models like `nomic-embed-text` use different prefixes for queries (`search_query: `) and documents (`search_document: `) to improve retrieval quality. OpenAI, Voyage, and most cloud models are symmetric — set both prefixes to empty strings.
 
-### Other Settings
+## Client Configuration
+
+### Claude Code (stdio)
+
+Add to your `~/.mcp.json` (or project-level `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "qdrant": {
+      "command": "python3",
+      "args": ["-m", "qdrant_mcp", "--transport", "stdio"],
+      "cwd": "/path/to/Qdrant-MCP",
+      "env": {
+        "PYTHONPATH": "/path/to/Qdrant-MCP:/path/to/parent"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Code to pick up the new server.
+
+### Claude.ai (HTTP)
+
+1. Start the server in HTTP mode (see [Quickstart](#quickstart) or [Docker](#docker))
+2. In Claude.ai settings, add a remote MCP server: `http://your-host:8090/mcp`
+
+### OpenClaw / Claude Code Forks (HTTP via mcp-remote)
+
+For MCP clients that only support stdio, use [mcp-remote](https://www.npmjs.com/package/mcp-remote) as a bridge:
+
+```json
+{
+  "mcpServers": {
+    "qdrant": {
+      "command": "npx",
+      "args": ["mcp-remote", "http://127.0.0.1:8090/mcp"]
+    }
+  }
+}
+```
+
+### Any OpenAI-compatible Client
+
+The HTTP endpoint at `/mcp` speaks the standard MCP streamable HTTP protocol. Any MCP-compatible client can connect.
+
+## Configuration Reference
+
+All settings can be configured in `qdrant_mcp/config.py` or overridden with environment variables.
+
+### Embedding
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `EMBED_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible embeddings API base URL |
+| `EMBED_MODEL` | `nomic-embed-text` | Embedding model name |
+| `EMBED_API_KEY` | _(empty)_ | API key for cloud providers |
+| `EMBED_QUERY_PREFIX` | `search_query: ` | Prefix prepended to search queries |
+| `EMBED_DOCUMENT_PREFIX` | `search_document: ` | Prefix prepended to document chunks |
+
+### Qdrant
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `QDRANT_HOST` | `localhost` | Qdrant server host |
+| `QDRANT_PORT` | `6333` | Qdrant REST API port |
+
+### Server
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MCP_HTTP_PORT` | `8090` | HTTP transport port |
+| `MCP_HTTP_HOST` | `0.0.0.0` | HTTP bind address |
 | `DEFAULT_COLLECTION` | `documents` | Default Qdrant collection |
 | `DEFAULT_CHUNK_SIZE` | `512` | Words per chunk |
 | `DEFAULT_CHUNK_OVERLAP` | `64` | Word overlap between chunks |
-| `MCP_HTTP_PORT` | `8090` | HTTP transport port |
-| `ALLOWED_INGEST_PATHS` | `/home/chohman/`, `/mnt/hdd/` | File ingestion whitelist |
 
-## Dependencies
+### Security
 
-- `mcp[cli]>=1.18.0` — MCP SDK with FastMCP
-- `qdrant-client>=1.17.0` — Qdrant Python client
-- `pydantic>=2.0` — Input validation
-- `pymupdf` — PDF text extraction (in Docker image)
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `ALLOWED_INGEST_PATHS` | _(configure per deployment)_ | Whitelist of directories for `qdrant_ingest_file` |
 
-Shared modules from `~/rag/lib/`: chunker, extractor, store. Embedding is handled by `qdrant_mcp/embeddings.py` (provider-agnostic).
+> **Important:** Update `ALLOWED_INGEST_PATHS` in `config.py` to match your environment. The default restricts file ingestion to specific directories.
+
+## Docker
+
+### Build and run
+
+```bash
+# Build (uses project root as build context)
+docker compose build
+
+# Start
+docker compose up -d
+
+# Verify
+curl -s http://localhost:8090/mcp
+```
+
+The Docker image:
+- Based on `python:3.11-slim`
+- Includes all Python dependencies + pymupdf
+- Uses host networking (needs access to Qdrant and embedding provider on localhost)
+- Resource limits: 512MB RAM, 2 CPUs
+
+### Environment variables in Docker
+
+Pass embedding config via `docker-compose.yaml`:
+
+```yaml
+services:
+  qdrant-mcp:
+    # ... existing config ...
+    environment:
+      - EMBED_BASE_URL=https://api.openai.com/v1
+      - EMBED_MODEL=text-embedding-3-small
+      - EMBED_API_KEY=${OPENAI_API_KEY}
+```
+
+## Project Structure
+
+```
+Qdrant-MCP/
+├── qdrant_mcp/
+│   ├── __init__.py
+│   ├── __main__.py          # Entry point: --transport stdio|streamable-http
+│   ├── server.py            # FastMCP server, lifespan, logging setup
+│   ├── config.py            # All configuration constants
+│   ├── embeddings.py        # Provider-agnostic OpenAI-compatible embedding client
+│   └── tools/
+│       ├── search.py        # qdrant_search
+│       ├── ingest.py        # qdrant_ingest_text, qdrant_ingest_file
+│       ├── collections.py   # qdrant_list_collections, qdrant_collection_info
+│       └── delete.py        # qdrant_delete
+├── Dockerfile
+├── docker-compose.yaml
+├── requirements.txt
+├── LICENSE
+└── README.md
+```
+
+### External dependency: `rag/lib/`
+
+The server imports shared modules for text chunking (`chunker.py`), PDF extraction (`extract.py`), and Qdrant storage operations (`store.py`). These must be available on `PYTHONPATH`. See the [rag/lib/](https://github.com/ncasfl/Qdrant-MCP) directory structure or adapt to your own chunking/extraction pipeline.
 
 ## Logging
 
-- **stdio mode**: Structured logs to stderr (keeps stdout clean for MCP protocol)
-- **HTTP mode**: Structured logs to `~/logs/qdrant-mcp.log`
-- Format: `2026-03-25 19:38:11  INFO   qdrant_mcp.search  ...`
+| Mode | Destination | Notes |
+|------|-------------|-------|
+| stdio | stderr | Keeps stdout clean for MCP protocol |
+| HTTP | Log file (configurable) | Default: `~/logs/qdrant-mcp.log` |
+
+Log format: `2026-03-25 19:38:11  INFO   qdrant_mcp.search  Embedding query: ...`
+
+Each tool module has its own logger (`qdrant_mcp.search`, `qdrant_mcp.ingest`, `qdrant_mcp.delete`, `qdrant_mcp.collections`).
 
 ## Error Handling
 
-All tools return actionable error messages for common failures:
+All tools return actionable error messages rather than raw tracebacks:
 
-| Failure | Error message |
-|---------|---------------|
-| Ollama down | "Ollama is not reachable (embedding failed). Is it running on port 11434?" |
-| Qdrant unreachable | "cannot reach Qdrant" / "cannot access collection" |
+| Failure | Message |
+|---------|---------|
+| Embedding provider unreachable | "Ollama is not reachable (embedding failed). Is it running on port 11434?" |
+| Qdrant unreachable | "cannot reach Qdrant" |
 | Collection not found | "collection 'X' not found" |
-| File not found | "file not found: /path" |
-| Path outside whitelist | "path '/etc/passwd' is outside allowed directories" |
+| File not found | "file not found: /path/to/file" |
+| Path outside whitelist | "path is outside allowed directories" |
 | Invalid parameters | Specific range/constraint messages |
+| PDF extraction failed | "failed to extract text from /path — {details}" |
 
-## Health Monitoring
+## Contributing
 
-When `qdrant-mcp=on` in `~/logs/expected-state.conf`, the health monitor (`~/health.sh --cron`) will auto-restart the server if it goes down.
+This started as a personal infrastructure project and is shared as a reference implementation. Forks and adaptations are welcome. If you build something interesting on top of it, feel free to open an issue to share.
+
+## License
+
+[MIT](LICENSE)
