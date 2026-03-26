@@ -1,7 +1,8 @@
 """Configuration constants for qdrant_mcp server.
 
-Edit these values for your deployment, or override embedding settings
-with environment variables (EMBED_BASE_URL, EMBED_MODEL, EMBED_API_KEY).
+All settings can be overridden with environment variables.
+Defaults work for native installs with Qdrant on localhost.
+Docker compose sets QDRANT_HOST=qdrant automatically.
 
 Paths use os.path internally, so both Unix and Windows formats work.
 Update ALLOWED_INGEST_PATHS and LOG_FILE for your platform.
@@ -10,9 +11,11 @@ Update ALLOWED_INGEST_PATHS and LOG_FILE for your platform.
 import os
 
 # Qdrant vector store
-QDRANT_URL = "http://localhost:6333"
-QDRANT_HOST = "localhost"
-QDRANT_PORT = 6333
+# Docker compose sets QDRANT_HOST=qdrant (container name).
+# Native installs default to localhost.
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.environ.get("QDRANT_PORT", "6333"))
+QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
 
 # Embedding provider — OpenAI-compatible /v1/embeddings API
 # Works with: Ollama, llama-server, OpenAI, Azure, Together, Fireworks, etc.

@@ -585,67 +585,101 @@ All settings can be configured in `qdrant_mcp/config.py` or overridden with envi
 
 ## Docker
 
-### Linux (host networking — recommended)
-
-The default `docker-compose.yaml` uses `network_mode: host`, which gives the container direct access to Qdrant and Ollama on localhost. This is the simplest setup.
+The `docker-compose.yaml` bundles **both Qdrant and the MCP server** — one command starts everything:
 
 ```bash
 docker compose build
 docker compose up -d
+```
 
-# Verify
+This starts:
+- **Qdrant** (vector database) on port 6333 with persistent storage
+- **qdrant-mcp** (MCP server) on port 8090, pre-configured to connect to the bundled Qdrant
+
+Verify:
+```bash
+# Qdrant health
+curl -s http://localhost:6333/healthz
+
+# MCP server
 curl -s http://localhost:8090/mcp
 ```
 
-### macOS and Windows (Docker Desktop)
+### Data persistence
 
-Docker Desktop runs containers inside a VM. `network_mode: host` refers to the VM's network, not your machine — so `localhost` inside the container doesn't reach your host services.
+Qdrant data is stored in a named Docker volume (`qdrant_data`). Your vectors and collections persist across:
+- Container restarts (`docker compose restart`)
+- Container rebuilds (`docker compose build && docker compose up -d`)
+- `docker compose down` (stops containers, keeps volumes)
 
-**Option A — Use `host.docker.internal` (simplest):**
+Data is only destroyed by explicitly removing the volume: `docker volume rm qdrant-mcp_qdrant_data`
 
-Create a `docker-compose.override.yaml` alongside the existing file:
+### Embedding provider in Docker
+
+The MCP server needs an embedding provider. By default, the compose file points at Ollama on your host machine via `host.docker.internal`:
+
 ```yaml
-services:
-  qdrant-mcp:
-    network_mode: bridge
-    ports:
-      - "8090:8090"
-    environment:
-      - QDRANT_HOST=host.docker.internal
-      - EMBED_BASE_URL=http://host.docker.internal:11434/v1
+environment:
+  - EMBED_BASE_URL=http://host.docker.internal:11434/v1
 ```
 
-`host.docker.internal` resolves to your host machine from inside Docker Desktop containers.
+For **cloud providers** (no local Ollama needed), override in the compose file or a `.env` file:
 
-> **Note:** The MCP server reads `QDRANT_HOST` from `config.py`, not from an environment variable by default. You'll need to either modify `config.py` to read `os.environ.get("QDRANT_HOST", "localhost")` or set the value directly in `config.py`.
+```yaml
+environment:
+  - EMBED_BASE_URL=https://api.openai.com/v1
+  - EMBED_MODEL=text-embedding-3-small
+  - EMBED_API_KEY=${OPENAI_API_KEY}
+```
 
-**Option B — Skip Docker, run natively:**
+> **Cloud providers work on all platforms** (Linux, macOS, Windows) with no additional configuration — embedding calls go out over the internet, not to localhost.
 
-On macOS and Windows, the native Python approach is simpler since there's no networking translation:
+### Platform notes
+
+<details>
+<summary><strong>Linux</strong></summary>
+
+Works out of the box. `host.docker.internal` resolves to the host via the `extra_hosts` directive in the compose file. Ollama and other host services are reachable.
+</details>
+
+<details>
+<summary><strong>macOS / Windows (Docker Desktop)</strong></summary>
+
+Works out of the box. Docker Desktop natively supports `host.docker.internal`. Ollama and other host services are reachable.
+
+If you prefer not to use Docker, the native Python approach works well on macOS and Windows:
 ```bash
 PYTHONPATH="$(pwd)" python3 -m qdrant_mcp --transport streamable-http --port 8090
 ```
+Note: you'll still need Qdrant running separately (via Docker or [Qdrant Cloud](https://cloud.qdrant.io/)).
+</details>
 
-### Docker image details
+### Using an existing Qdrant instance
 
-- Based on `python:3.11-slim`
-- Includes all Python dependencies + pymupdf + bundled `rag/lib/` modules
-- Resource limits: 512MB RAM, 2 CPUs
-- Self-contained — no external file mounts needed
-
-### Environment variables in Docker
-
-Pass embedding config via `docker-compose.yaml` or an override file:
+If you already have Qdrant running, you can skip the bundled one. Create a `docker-compose.override.yaml`:
 
 ```yaml
 services:
+  qdrant:
+    # Disable the bundled Qdrant
+    profiles: ["disabled"]
   qdrant-mcp:
-    # ... existing config ...
     environment:
-      - EMBED_BASE_URL=https://api.openai.com/v1
-      - EMBED_MODEL=text-embedding-3-small
-      - EMBED_API_KEY=${OPENAI_API_KEY}
+      # Point at your existing Qdrant
+      - QDRANT_HOST=your-qdrant-host
+      - QDRANT_PORT=6333
 ```
+
+Or for native Python installs, just set `QDRANT_HOST` in your environment or edit `config.py`.
+
+### Docker image details
+
+| Component | Image | Size |
+|-----------|-------|------|
+| Qdrant | `qdrant/qdrant:v1.13.6` | ~100 MB |
+| qdrant-mcp | Custom (`python:3.11-slim` + deps) | ~250 MB |
+
+Both containers have resource limits (Qdrant: 1 GB RAM, MCP: 512 MB RAM).
 
 ## Project Structure
 
