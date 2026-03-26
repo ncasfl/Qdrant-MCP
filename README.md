@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">Qdrant MCP Server</h1>
   <p align="center">
-    Semantic search, document ingestion, and collection management over <a href="https://qdrant.tech">Qdrant</a> — powered by <a href="https://modelcontextprotocol.io">MCP</a>
+    A self-contained RAG toolkit for AI assistants — vector database, document ingestion, and semantic search in one package
   </p>
 </p>
 
@@ -17,16 +17,19 @@
 
 ---
 
-An [MCP](https://modelcontextprotocol.io) server that exposes your [Qdrant](https://qdrant.tech) vector database as tools for AI assistants. Ingest documents, search semantically, and manage collections — all through natural conversation.
+Qdrant MCP Server gives AI assistants the ability to store, search, and manage documents using a built-in [Qdrant](https://qdrant.tech) vector database. It implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), which means any MCP-compatible client — Claude Desktop, Claude Code, Claude.ai, or third-party tools — can use it as a knowledge base through natural conversation.
 
-Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk) (Python). Supports **any OpenAI-compatible embedding provider** — local (Ollama, llama.cpp) or cloud (OpenAI, Anthropic, Google, Azure).
+**How it works:** You ingest documents (PDFs, text files, or raw text). The server chunks them, generates embeddings via your choice of provider, and stores the vectors in Qdrant. When you ask a question, it embeds your query and returns the most relevant passages with source attribution and similarity scores.
 
-## Why
+**What's included:**
 
-- **Search your documents from any MCP client** — ask "find my notes about X" and get ranked results from Qdrant
-- **Ingest files mid-conversation** — drop a PDF or text file and it's chunked, embedded, and searchable immediately
-- **Provider-agnostic embeddings** — swap between local GPU, local CPU, or cloud APIs by changing one URL
-- **Dual transport** — stdio for Claude Code, streamable HTTP for Claude.ai, OpenClaw, or any HTTP-capable client
+- **Qdrant vector database** — bundled in Docker, starts automatically with `docker compose up`. No separate installation needed. (Can also point at an existing Qdrant instance if you have one.)
+- **6 MCP tools** — search, ingest text, ingest files (PDF/text/markdown/HTML), list collections, collection details, and delete — all accessible through conversation
+- **Provider-agnostic embeddings** — works with any OpenAI-compatible API: local (Ollama, llama.cpp) or cloud (OpenAI, Anthropic/Voyage, Google, Azure). Switch providers by changing one URL.
+- **Dual transport** — stdio for Claude Desktop and Claude Code, streamable HTTP for Claude.ai or any HTTP-capable MCP client
+- **Cross-platform** — runs on Linux, macOS, and Windows via native Python or Docker
+
+Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk) (Python).
 
 ## Usage Examples
 
