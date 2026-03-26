@@ -216,9 +216,17 @@ All tools support both **markdown** and **json** response formats.
 ```bash
 git clone https://github.com/ncasfl/Qdrant-MCP.git
 cd Qdrant-MCP
+
+# Create and activate a virtual environment (recommended)
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 pip install pymupdf  # for PDF support
 ```
+
+> **Why a virtual environment?** The server depends on `mcp`, `qdrant-client`, `pydantic`, and their transitive dependencies. A venv keeps these isolated from your system Python. The Claude Code MCP config and Docker image both handle this automatically — the venv is only needed for native/manual installs.
 
 ### 2. Configure your embedding provider
 
@@ -361,16 +369,18 @@ Add to your `~/.mcp.json` (or project-level `.mcp.json`):
 {
   "mcpServers": {
     "qdrant": {
-      "command": "python3",
+      "command": "/path/to/Qdrant-MCP/.venv/bin/python3",
       "args": ["-m", "qdrant_mcp", "--transport", "stdio"],
       "cwd": "/path/to/Qdrant-MCP",
       "env": {
-        "PYTHONPATH": "/path/to/Qdrant-MCP:/path/to/parent"
+        "PYTHONPATH": "/path/to/Qdrant-MCP"
       }
     }
   }
 }
 ```
+
+> **Note:** Point `command` to the venv Python binary so Claude Code uses the isolated environment. If you installed dependencies globally or use Docker, `python3` works instead.
 
 Restart Claude Code to pick up the new server.
 
