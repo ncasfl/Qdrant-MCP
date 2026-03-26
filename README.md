@@ -27,6 +27,145 @@ Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk) (Python
 - **Provider-agnostic embeddings** — swap between local GPU, local CPU, or cloud APIs by changing one URL
 - **Dual transport** — stdio for Claude Code, streamable HTTP for Claude.ai, OpenClaw, or any HTTP-capable client
 
+## Usage Examples
+
+Once the server is running and connected to your MCP client, interact through natural conversation:
+
+### Searching documents
+
+> **You:** Search my documents for contract termination clauses
+
+```
+Search results for: contract termination clauses
+
+Collection: documents | Results: 3
+
+[1] 0.8234 — services-agreement.pdf p.12 (chunk 23)
+Either party may terminate this Agreement upon thirty (30) days written
+notice to the other party. In the event of a material breach...
+
+[2] 0.7891 — employee-handbook.pdf p.45 (chunk 67)
+Employment may be terminated at will by either party with or without
+cause, subject to the notice requirements in Section 8.2...
+```
+
+### Ingesting a file
+
+> **You:** Ingest this PDF: /home/user/Documents/quarterly-report.pdf
+
+```json
+{
+  "status": "ok",
+  "file": "/home/user/Documents/quarterly-report.pdf",
+  "collection": "documents",
+  "pages_extracted": 24,
+  "chunks_created": 47,
+  "points_upserted": 47,
+  "text_length": 38291
+}
+```
+
+### Ingesting raw text
+
+> **You:** Ingest this text as "meeting-notes-mar-25":
+> We discussed the Q1 roadmap and agreed to prioritize the API redesign. Budget was approved for two additional headcount...
+
+```json
+{
+  "status": "ok",
+  "source": "meeting-notes-mar-25",
+  "collection": "documents",
+  "chunks_created": 1,
+  "points_upserted": 1,
+  "text_length": 142
+}
+```
+
+### Browsing collections
+
+> **You:** What collections do I have?
+
+```
+Qdrant Collections (2 total)
+
+| Collection | Points | Dimension | Distance |
+|------------|--------|-----------|----------|
+| documents  | 198    | 768       | Cosine   |
+| research   | 43     | 768       | Cosine   |
+```
+
+### Deleting documents
+
+> **You:** Delete all chunks from source "old-report.pdf"
+
+The server requires explicit confirmation for destructive operations — the LLM must pass `confirm=true`:
+
+```json
+{
+  "status": "ok",
+  "collection": "documents",
+  "points_before": 198,
+  "points_after": 185,
+  "points_deleted": 13,
+  "filter_source": "/home/user/Documents/old-report.pdf"
+}
+```
+
+## Working with Documents
+
+### Where to place files
+
+Files must be in a directory listed in `ALLOWED_INGEST_PATHS` (configured in `config.py`). By default this is restrictive — **update it for your environment**:
+
+```python
+# config.py
+ALLOWED_INGEST_PATHS = [
+    "/home/youruser/Documents/",
+    "/home/youruser/projects/",
+    "/data/shared/",
+]
+```
+
+Any path outside these directories will be rejected with an error. This is a security measure to prevent unintended file access.
+
+### Supported file formats
+
+| Format | Extensions | Notes |
+|--------|-----------|-------|
+| PDF | `.pdf` | Text extracted via pymupdf; page boundaries preserved in metadata |
+| Plain text | `.txt` | Direct ingestion |
+| Markdown | `.md` | Ingested as plain text (markup preserved in chunks) |
+| CSV | `.csv` | Ingested as raw text — rows become part of chunks |
+| JSON | `.json` | Ingested as raw text |
+| HTML | `.html`, `.htm` | Raw HTML ingested (tags included); pre-process for cleaner results |
+| Log files | `.log` | Direct ingestion |
+| reStructuredText | `.rst` | Ingested as plain text |
+
+Files with unrecognized extensions are attempted as plain text.
+
+> **Not supported:** Word documents (`.docx`), Excel (`.xlsx`), images, audio, or scanned PDFs without OCR text layers. Convert these to PDF or text before ingesting.
+
+### Tips for better retrieval
+
+**Before ingesting:**
+
+- **Clean your PDFs.** Scanned documents need an OCR text layer — check by trying to select text in a PDF viewer. If you can't select text, the PDF contains only images and will extract as empty.
+- **Remove boilerplate.** Headers, footers, page numbers, and legal disclaimers in every page create noise. If you can pre-process them out, your search quality improves.
+- **Split large documents by topic.** A 500-page manual ingested as one file works, but searching is more precise if you split it into logical sections (one file per chapter or topic).
+- **Use descriptive source names.** The `source` parameter is searchable via `source_filter`. Names like `q1-2026-financial-review` are more useful than `doc1.pdf`.
+
+**Tuning chunk settings:**
+
+- **Default chunk size (512 words)** works well for most documents. Larger chunks (1000+) preserve more context but reduce precision. Smaller chunks (200) are more precise but may lose context.
+- **Overlap (64 words)** ensures concepts that span chunk boundaries aren't lost. Increase to 100-128 for technical documents with long multi-sentence concepts.
+- **Re-ingesting a source** with the same name overwrites previous chunks (deterministic IDs). You can safely re-ingest after updating a document.
+
+**Organizing with collections:**
+
+- Use the default `documents` collection for general use
+- Create separate collections for different domains: `qdrant_ingest_file` accepts a `collection` parameter
+- Example: `legal` for contracts, `technical` for specs, `research` for papers — then search within a specific collection for focused results
+
 ## Tools
 
 | Tool | Description | Type |
