@@ -213,9 +213,24 @@ All tools support both **markdown** and **json** response formats via the `respo
 
 ## Prerequisites
 
-- **Python 3.10+**
-- **Qdrant** running and accessible (default: `localhost:6333`)
+### Required
+
+- **Python 3.10+** (tested on 3.10 and 3.11)
+- **Qdrant** running and accessible (default: `localhost:6333`) — [install guide](https://qdrant.tech/documentation/guides/installation/)
 - **An embedding provider** — any OpenAI-compatible `/v1/embeddings` endpoint (see [Embedding Providers](#embedding-providers))
+
+### System Requirements
+
+| Resource | Minimum | Recommended | Notes |
+|----------|---------|-------------|-------|
+| **RAM** | 512 MB | 1 GB+ | MCP server uses ~50 MB. Qdrant uses 100-500 MB depending on collection size. Local embedding models add 500 MB–4 GB. |
+| **Disk** | 500 MB | 1 GB+ | Project + Python dependencies (~200 MB), Qdrant data (varies with ingested documents), pymupdf (~25 MB). |
+| **GPU** | None | Optional | Only needed for local GPU-accelerated embeddings (Ollama). Cloud providers (OpenAI, Voyage) require no GPU. CPU embedding via llama.cpp works without a GPU. |
+| **OS** | Linux, macOS, Windows | Linux | All platforms supported for native Python. Docker sidecar uses host networking (Linux only). |
+| **Docker** | Not required | Optional | Only needed if running the Docker sidecar. Native Python process works without Docker. |
+| **Network** | localhost | LAN | Qdrant and embedding provider must be reachable. HTTP transport exposes port 8090 on the configured bind address. |
+
+> **Scaling note:** RAM and disk grow with the amount of ingested data. Each 768-dimension vector (nomic-embed-text) uses ~3 KB in Qdrant. 10,000 document chunks ≈ 30 MB of vector data plus payload text storage. For most personal/team use, this is negligible.
 
 ## Quickstart
 
