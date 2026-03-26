@@ -215,8 +215,8 @@ All tools support both **markdown** and **json** response formats via the `respo
 
 ### Required
 
-- **Python 3.10+** (tested on 3.10 and 3.11)
-- **Qdrant** running and accessible (default: `localhost:6333`) — [install guide](https://qdrant.tech/documentation/guides/installation/)
+- **Python 3.10+** (tested on 3.10 and 3.11) — *or* **Docker** (which bundles everything)
+- **Qdrant** — bundled in `docker compose up`, or [install separately](https://qdrant.tech/documentation/guides/installation/) for native Python
 - **An embedding provider** — any OpenAI-compatible `/v1/embeddings` endpoint (see [Embedding Providers](#embedding-providers))
 
 ### System Requirements
@@ -226,8 +226,8 @@ All tools support both **markdown** and **json** response formats via the `respo
 | **RAM** | 512 MB | 1 GB+ | MCP server uses ~50 MB. Qdrant uses 100-500 MB depending on collection size. Local embedding models add 500 MB–4 GB. |
 | **Disk** | 500 MB | 1 GB+ | Project + Python dependencies (~200 MB), Qdrant data (varies with ingested documents), pymupdf (~25 MB). |
 | **GPU** | None | Optional | Only needed for local GPU-accelerated embeddings (Ollama). Cloud providers (OpenAI, Voyage) require no GPU. CPU embedding via llama.cpp works without a GPU. |
-| **OS** | Linux, macOS, Windows | Linux | All platforms supported for native Python. Docker sidecar uses host networking (Linux only). |
-| **Docker** | Not required | Optional | Only needed if running the Docker sidecar. Native Python process works without Docker. |
+| **OS** | Linux, macOS, Windows | Linux | All platforms supported for native Python and Docker. |
+| **Docker** | Not required | Optional | `docker compose up` starts both Qdrant and the MCP server. Native Python works without Docker (requires separate Qdrant install). |
 | **Network** | localhost | LAN | Qdrant and embedding provider must be reachable. HTTP transport exposes port 8090 on the configured bind address. |
 
 > **Scaling note:** RAM and disk grow with the amount of ingested data. Each 768-dimension vector (nomic-embed-text) uses ~3 KB in Qdrant. 10,000 document chunks ≈ 30 MB of vector data plus payload text storage. For most personal/team use, this is negligible.
@@ -562,8 +562,8 @@ All settings can be configured in `qdrant_mcp/config.py` or overridden with envi
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `QDRANT_HOST` | `localhost` | Qdrant server host |
-| `QDRANT_PORT` | `6333` | Qdrant REST API port |
+| `QDRANT_HOST` | `localhost` | Qdrant server host. Docker compose sets this to `qdrant` (container name) automatically. Override with `QDRANT_HOST` env var. |
+| `QDRANT_PORT` | `6333` | Qdrant REST API port. Override with `QDRANT_PORT` env var. |
 
 ### Server
 
@@ -661,8 +661,13 @@ If you already have Qdrant running, you can skip the bundled one. Create a `dock
 ```yaml
 services:
   qdrant:
-    # Disable the bundled Qdrant
-    profiles: ["disabled"]
+    # Replace bundled Qdrant with a no-op
+    image: busybox
+    command: ["true"]
+    restart: "no"
+    ports: !reset []
+    volumes: !reset []
+    deploy: !reset {}
   qdrant-mcp:
     environment:
       # Point at your existing Qdrant
@@ -670,7 +675,9 @@ services:
       - QDRANT_PORT=6333
 ```
 
-Or for native Python installs, just set `QDRANT_HOST` in your environment or edit `config.py`.
+> **Tip:** Add `docker-compose.override.yaml` to your `.gitignore` — it's deployment-specific.
+
+For native Python installs, set `QDRANT_HOST` in your environment or edit `config.py` directly.
 
 ### Docker image details
 
