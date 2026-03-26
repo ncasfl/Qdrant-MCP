@@ -236,20 +236,37 @@ All tools support both **markdown** and **json** response formats via the `respo
 
 ### 1. Clone and install
 
+**Linux / macOS:**
 ```bash
 git clone https://github.com/ncasfl/Qdrant-MCP.git
 cd Qdrant-MCP
 
 # Create and activate a virtual environment (recommended)
 python3 -m venv .venv
-source .venv/bin/activate        # Linux / macOS
-# .venv\Scripts\activate         # Windows (PowerShell)
-# .venv\Scripts\activate.bat     # Windows (cmd)
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 pip install pymupdf  # for PDF support
 ```
+
+> **Ubuntu/Debian note:** If `python3 -m venv` fails with "ensurepip is not available", install the venv package first: `sudo apt install python3.10-venv` (adjust version to match your Python).
+
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/ncasfl/Qdrant-MCP.git
+cd Qdrant-MCP
+
+# Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+pip install pymupdf
+```
+
+> **Windows note:** Use `python` (not `python3`) — Windows Python installers register as `python`. If you get a "not recognized" error, ensure Python is in your system PATH.
 
 > **Why a virtual environment?** The server depends on `mcp`, `qdrant-client`, `pydantic`, and their transitive dependencies. A venv keeps these isolated from your system Python. The Claude Code MCP config and Docker image both handle this automatically — the venv is only needed for native/manual installs.
 
@@ -257,27 +274,48 @@ pip install pymupdf  # for PDF support
 
 Edit `qdrant_mcp/config.py` or set environment variables:
 
+**Linux / macOS (bash):**
 ```bash
-# Example: Ollama running locally (default)
 export EMBED_BASE_URL=http://localhost:11434/v1
 export EMBED_MODEL=nomic-embed-text
 
-# Example: OpenAI
+# For cloud providers:
 export EMBED_BASE_URL=https://api.openai.com/v1
 export EMBED_MODEL=text-embedding-3-small
 export EMBED_API_KEY=sk-...
 ```
 
-### 3. Run the server
+**Windows (PowerShell):**
+```powershell
+$env:EMBED_BASE_URL = "http://localhost:11434/v1"
+$env:EMBED_MODEL = "nomic-embed-text"
 
-**stdio** (for Claude Code):
-```bash
-PYTHONPATH="$(pwd)" python3 -m qdrant_mcp --transport stdio
+# For cloud providers:
+$env:EMBED_BASE_URL = "https://api.openai.com/v1"
+$env:EMBED_MODEL = "text-embedding-3-small"
+$env:EMBED_API_KEY = "sk-..."
 ```
 
-**HTTP** (for Claude.ai, OpenClaw, or other HTTP clients):
+### 3. Run the server
+
+**Linux / macOS:**
 ```bash
+# stdio (for Claude Code / Claude Desktop):
+PYTHONPATH="$(pwd)" python3 -m qdrant_mcp --transport stdio
+
+# HTTP (for Claude.ai or other HTTP clients):
 PYTHONPATH="$(pwd)" python3 -m qdrant_mcp --transport streamable-http --port 8090
+```
+
+**Windows (PowerShell):**
+```powershell
+# stdio:
+$env:PYTHONPATH = (Get-Location).Path
+python -m qdrant_mcp --transport stdio
+
+# HTTP:
+$env:PYTHONPATH = (Get-Location).Path
+python -m qdrant_mcp --transport streamable-http --port 8090
 ```
 
 ### 4. Connect a client
@@ -547,28 +585,57 @@ All settings can be configured in `qdrant_mcp/config.py` or overridden with envi
 
 ## Docker
 
-### Build and run
+### Linux (host networking — recommended)
+
+The default `docker-compose.yaml` uses `network_mode: host`, which gives the container direct access to Qdrant and Ollama on localhost. This is the simplest setup.
 
 ```bash
-# Build (uses project root as build context)
 docker compose build
-
-# Start
 docker compose up -d
 
 # Verify
 curl -s http://localhost:8090/mcp
 ```
 
-The Docker image:
+### macOS and Windows (Docker Desktop)
+
+Docker Desktop runs containers inside a VM. `network_mode: host` refers to the VM's network, not your machine — so `localhost` inside the container doesn't reach your host services.
+
+**Option A — Use `host.docker.internal` (simplest):**
+
+Create a `docker-compose.override.yaml` alongside the existing file:
+```yaml
+services:
+  qdrant-mcp:
+    network_mode: bridge
+    ports:
+      - "8090:8090"
+    environment:
+      - QDRANT_HOST=host.docker.internal
+      - EMBED_BASE_URL=http://host.docker.internal:11434/v1
+```
+
+`host.docker.internal` resolves to your host machine from inside Docker Desktop containers.
+
+> **Note:** The MCP server reads `QDRANT_HOST` from `config.py`, not from an environment variable by default. You'll need to either modify `config.py` to read `os.environ.get("QDRANT_HOST", "localhost")` or set the value directly in `config.py`.
+
+**Option B — Skip Docker, run natively:**
+
+On macOS and Windows, the native Python approach is simpler since there's no networking translation:
+```bash
+PYTHONPATH="$(pwd)" python3 -m qdrant_mcp --transport streamable-http --port 8090
+```
+
+### Docker image details
+
 - Based on `python:3.11-slim`
-- Includes all Python dependencies + pymupdf
-- Uses host networking (needs access to Qdrant and embedding provider on localhost)
+- Includes all Python dependencies + pymupdf + bundled `rag/lib/` modules
 - Resource limits: 512MB RAM, 2 CPUs
+- Self-contained — no external file mounts needed
 
 ### Environment variables in Docker
 
-Pass embedding config via `docker-compose.yaml`:
+Pass embedding config via `docker-compose.yaml` or an override file:
 
 ```yaml
 services:
@@ -595,6 +662,11 @@ Qdrant-MCP/
 │       ├── ingest.py        # qdrant_ingest_text, qdrant_ingest_file
 │       ├── collections.py   # qdrant_list_collections, qdrant_collection_info
 │       └── delete.py        # qdrant_delete
+├── rag/
+│   └── lib/
+│       ├── chunker.py       # Text chunking with overlap + page tracking
+│       ├── extract.py       # PDF/text extraction via pymupdf
+│       └── store.py         # Qdrant CRUD + search operations
 ├── Dockerfile
 ├── docker-compose.yaml
 ├── requirements.txt
@@ -602,9 +674,9 @@ Qdrant-MCP/
 └── README.md
 ```
 
-### External dependency: `rag/lib/`
+### Bundled modules: `rag/lib/`
 
-The server imports shared modules for text chunking (`chunker.py`), PDF extraction (`extract.py`), and Qdrant storage operations (`store.py`). These must be available on `PYTHONPATH`. See the [rag/lib/](https://github.com/ncasfl/Qdrant-MCP) directory structure or adapt to your own chunking/extraction pipeline.
+The server includes shared modules for text chunking (`chunker.py`), PDF extraction (`extract.py`), and Qdrant storage operations (`store.py`). These are bundled in the repository under `rag/lib/` and require no additional setup — they're included in `PYTHONPATH` automatically when you follow the quickstart instructions.
 
 ## Logging
 

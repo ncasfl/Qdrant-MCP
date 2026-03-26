@@ -1,12 +1,14 @@
 services:
   qdrant-mcp:
     build:
-      context: /home/chohman
-      dockerfile: qdrant-mcp/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: qdrant-mcp
     restart: unless-stopped
 
     # Host networking — needs access to Qdrant :6333 and Ollama :11434 on localhost
+    # NOTE: host networking is Linux only. For macOS/Windows Docker Desktop,
+    # replace with port mapping — see README Docker section.
     network_mode: host
 
     environment:
