@@ -11,7 +11,8 @@
   <a href="#embedding-providers">Embedding Providers</a> &bull;
   <a href="#client-configuration">Client Configuration</a> &bull;
   <a href="#configuration-reference">Configuration</a> &bull;
-  <a href="#docker">Docker</a>
+  <a href="#docker">Docker</a> &bull;
+  <a href="#troubleshooting">Troubleshooting</a>
 </p>
 
 ---
@@ -175,16 +176,16 @@ Files with unrecognized extensions are attempted as plain text.
 
 ## Tools
 
-| Tool | Description | Type |
-|------|-------------|------|
-| `qdrant_search` | Semantic search with score threshold and source filtering | read-only |
-| `qdrant_ingest_text` | Chunk, embed, and store raw text | write |
-| `qdrant_ingest_file` | Extract text from PDF/text files, then ingest | write |
-| `qdrant_list_collections` | List all collections with point counts and vector config | read-only |
-| `qdrant_collection_info` | Detailed stats on a specific collection | read-only |
-| `qdrant_delete` | Remove points by ID or source filter (requires `confirm=true`) | destructive |
+| Tool | Description | readOnly | destructive | idempotent |
+|------|-------------|:--------:|:-----------:|:----------:|
+| `qdrant_search` | Semantic search with score threshold and source filtering | yes | no | yes |
+| `qdrant_ingest_text` | Chunk, embed, and store raw text | no | no | no |
+| `qdrant_ingest_file` | Extract text from PDF/text files, then ingest | no | no | no |
+| `qdrant_list_collections` | List all collections with point counts and vector config | yes | no | yes |
+| `qdrant_collection_info` | Detailed stats on a specific collection | yes | no | yes |
+| `qdrant_delete` | Remove points by ID or source filter (requires `confirm=true`) | no | **yes** | yes |
 
-All tools support both **markdown** and **json** response formats.
+All tools support both **markdown** and **json** response formats via the `response_format` parameter. Tool annotations follow the [MCP specification](https://modelcontextprotocol.io/specification/latest) and inform clients about tool behavior for permission and safety decisions.
 
 ## Architecture
 
@@ -370,7 +371,63 @@ EMBED_DOCUMENT_PREFIX=
 
 ## Client Configuration
 
-### Claude Code (stdio)
+### Claude Desktop (stdio)
+
+Add to your Claude Desktop config file:
+
+| Platform | Config path |
+|----------|-------------|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Linux | `~/.config/Claude/claude_desktop_config.json` |
+
+**macOS / Linux:**
+```json
+{
+  "mcpServers": {
+    "qdrant": {
+      "command": "/path/to/Qdrant-MCP/.venv/bin/python3",
+      "args": ["-m", "qdrant_mcp", "--transport", "stdio"],
+      "env": {
+        "PYTHONPATH": "/path/to/Qdrant-MCP"
+      }
+    }
+  }
+}
+```
+
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "qdrant": {
+      "command": "C:\\path\\to\\Qdrant-MCP\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "qdrant_mcp", "--transport", "stdio"],
+      "env": {
+        "PYTHONPATH": "C:\\path\\to\\Qdrant-MCP",
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}
+```
+
+> **Important:** Claude Desktop requires a **full restart** (quit and reopen, not just close the window) to pick up config changes. Use absolute paths — Claude Desktop does not inherit your shell's `PATH` or working directory. On Windows, add `PYTHONIOENCODING: utf-8` to avoid encoding issues.
+
+<details>
+<summary><strong>Debugging Claude Desktop connection</strong></summary>
+
+Check the MCP logs if the server doesn't appear:
+
+| Platform | Log path |
+|----------|----------|
+| macOS | `~/Library/Logs/Claude/mcp.log` and `mcp-server-qdrant.log` |
+| Windows | `%APPDATA%\Claude\logs\` |
+
+Common issues: JSON syntax errors in config (silent failure), wrong Python path, missing `PYTHONPATH`.
+</details>
+
+### Claude Code / VS Code Extension (stdio)
 
 Add to your `~/.mcp.json` (or project-level `.mcp.json`):
 
@@ -558,6 +615,138 @@ All tools return actionable error messages rather than raw tracebacks:
 | Path outside whitelist | "path is outside allowed directories" |
 | Invalid parameters | Specific range/constraint messages |
 | PDF extraction failed | "failed to extract text from /path — {details}" |
+
+## Troubleshooting
+
+<details>
+<summary><strong>Server not found / ENOENT error</strong></summary>
+
+**Symptom:** `spawn python3 ENOENT` or server doesn't appear in client.
+
+**Cause:** The MCP client can't find the Python executable. Claude Desktop and some editors launch servers with a minimal `PATH` that doesn't include your shell's customizations (pyenv, nvm, conda, etc.).
+
+**Fix:** Use the **absolute path** to the venv Python in your config:
+```bash
+# Find your venv Python path
+which python3                              # system
+/path/to/Qdrant-MCP/.venv/bin/python3     # venv (Linux/macOS)
+/path/to/Qdrant-MCP/.venv/Scripts/python.exe  # venv (Windows)
+```
+</details>
+
+<details>
+<summary><strong>ModuleNotFoundError: No module named 'qdrant_mcp'</strong></summary>
+
+**Cause:** `PYTHONPATH` is not set or points to the wrong directory.
+
+**Fix:** Ensure your client config includes `PYTHONPATH` pointing to the project root:
+```json
+"env": {
+  "PYTHONPATH": "/path/to/Qdrant-MCP"
+}
+```
+
+If you also use `rag/lib/` modules, include the parent directory:
+```json
+"env": {
+  "PYTHONPATH": "/path/to/Qdrant-MCP:/path/to/parent-containing-rag"
+}
+```
+</details>
+
+<details>
+<summary><strong>ModuleNotFoundError: No module named 'mcp' (or qdrant_client, etc.)</strong></summary>
+
+**Cause:** The `command` in your config points to system Python, but dependencies are installed in a virtual environment.
+
+**Fix:** Point `command` to the venv Python binary, not `python3`:
+```json
+"command": "/path/to/Qdrant-MCP/.venv/bin/python3"
+```
+</details>
+
+<details>
+<summary><strong>Embedding failed / Ollama not reachable</strong></summary>
+
+**Cause:** The embedding provider is not running or the URL is wrong.
+
+**Fix:**
+1. Verify your provider is running: `curl http://localhost:11434/v1/embeddings -d '{"model":"nomic-embed-text","input":["test"]}'`
+2. Check `EMBED_BASE_URL` matches your provider's actual URL
+3. For cloud providers, verify `EMBED_API_KEY` is set (check env var, not just config.py)
+</details>
+
+<details>
+<summary><strong>Windows: npx not found for mcp-remote bridge</strong></summary>
+
+**Cause:** Windows `spawn` doesn't invoke a shell by default, and `npx` is a shell script.
+
+**Fix:** Use `cmd /c` as the command wrapper:
+```json
+{
+  "command": "cmd",
+  "args": ["/c", "npx", "mcp-remote", "http://127.0.0.1:8090/mcp"]
+}
+```
+</details>
+
+<details>
+<summary><strong>Connection works from CLI but not from Claude Desktop</strong></summary>
+
+**Cause:** Claude Desktop inherits a minimal environment. Variables like `PATH`, `HOME`, `PYTHONPATH`, and anything set in `.bashrc`/`.zshrc` are **not available**.
+
+**Fix:** Set all required environment variables explicitly in the `env` block of your config. Use absolute paths everywhere — no `~`, `$HOME`, or relative paths.
+</details>
+
+<details>
+<summary><strong>Silent config errors in Claude Desktop</strong></summary>
+
+**Cause:** JSON syntax errors in `claude_desktop_config.json` fail silently — no error dialog.
+
+**Fix:** Validate your JSON before saving:
+```bash
+python3 -m json.tool < ~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
+</details>
+
+## Debugging
+
+### MCP Inspector
+
+Test your server directly without a client using the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/debugging):
+
+```bash
+# stdio mode
+npx @modelcontextprotocol/inspector python3 -m qdrant_mcp --transport stdio
+
+# HTTP mode (start server first, then point inspector at it)
+npx @modelcontextprotocol/inspector --url http://localhost:8090/mcp
+```
+
+The Inspector provides an interactive UI to list tools, call them with parameters, and inspect responses.
+
+### Server logs
+
+| Mode | Location |
+|------|----------|
+| stdio | stderr (visible in terminal or client logs) |
+| HTTP / Docker | `~/logs/qdrant-mcp.log` (configurable via `LOG_FILE` in config.py) |
+| Claude Desktop | `~/Library/Logs/Claude/mcp-server-qdrant.log` (macOS) |
+
+## Security Considerations
+
+- **The server runs with user-level permissions.** Any file accessible to the user running the server can be read by `qdrant_ingest_file` (within `ALLOWED_INGEST_PATHS`). Configure the path whitelist carefully.
+- **No authentication on HTTP transport.** The streamable HTTP endpoint on port 8090 has no auth. If you expose it beyond localhost, anyone who can reach the port can search, ingest, and delete data. Bind to `127.0.0.1` (change `MCP_HTTP_HOST` in config.py) if you don't need LAN access, or use a reverse proxy with auth.
+- **API keys in environment variables.** `EMBED_API_KEY` is read from the environment or config.py. Avoid committing API keys to config.py — use environment variables or a `.env` file (already in `.gitignore`).
+- **Qdrant access.** The server connects to Qdrant with no authentication by default. If your Qdrant instance contains sensitive data, enable [Qdrant API key authentication](https://qdrant.tech/documentation/guides/security/).
+
+## Known Limitations
+
+- **No streaming for large ingestions.** Ingesting a large PDF (hundreds of pages) blocks until complete. The server remains responsive for other tool calls (async), but the calling client will wait.
+- **No OCR.** Scanned PDFs without a text layer extract as empty. Pre-process with an OCR tool (e.g., `ocrmypdf`) before ingesting.
+- **No `.docx` / `.xlsx` support.** Convert to PDF or text first. Adding support via `python-docx` / `openpyxl` is straightforward if needed.
+- **Chunk size is word-based, not token-based.** The chunker splits on whitespace, which approximates but doesn't exactly match model tokenization. This is sufficient for retrieval but not exact for token budgets.
+- **Single embedding model per server instance.** All collections use the same embedding model/dimension. To use different models for different collections, run separate server instances with different configs.
 
 ## Contributing
 
