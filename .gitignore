@@ -28,9 +28,10 @@ logs/
 # Docker build cache
 .docker/
 
+# Local docker-compose override (deployment-specific)
+docker-compose.override.yaml
+
 # Test artifacts
 tests/__pycache__/
 .pytest_cache/
 
-# RAG lib is imported at runtime, not bundled in repo
-# (lives at ~/rag/lib/ on the host)
