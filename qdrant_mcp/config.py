@@ -1,4 +1,13 @@
-"""Configuration constants for qdrant_mcp server."""
+"""Configuration constants for qdrant_mcp server.
+
+Edit these values for your deployment, or override embedding settings
+with environment variables (EMBED_BASE_URL, EMBED_MODEL, EMBED_API_KEY).
+
+Paths use os.path internally, so both Unix and Windows formats work.
+Update ALLOWED_INGEST_PATHS and LOG_FILE for your platform.
+"""
+
+import os
 
 # Qdrant vector store
 QDRANT_URL = "http://localhost:6333"
@@ -28,11 +37,16 @@ DEFAULT_CHUNK_OVERLAP = 64
 MCP_HTTP_HOST = "0.0.0.0"
 MCP_HTTP_PORT = 8090
 
-# Logging
-LOG_FILE = "/home/chohman/logs/qdrant-mcp.log"
+# Logging — update for your platform
+# Unix:    "/home/youruser/logs/qdrant-mcp.log"
+# Windows: "C:\\Users\\youruser\\logs\\qdrant-mcp.log"
+LOG_FILE = os.path.join(os.path.expanduser("~"), "logs", "qdrant-mcp.log")
 
 # Security: allowed paths for file ingestion
+# Only files under these directories can be ingested via qdrant_ingest_file.
+# Update for your platform:
+#   Unix:    ["/home/youruser/Documents/", "/data/shared/"]
+#   Windows: ["C:\\Users\\youruser\\Documents\\", "D:\\shared\\"]
 ALLOWED_INGEST_PATHS = [
-    "/home/chohman/",
-    "/mnt/hdd/",
+    os.path.expanduser("~"),
 ]

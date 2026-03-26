@@ -115,18 +115,25 @@ The server requires explicit confirmation for destructive operations — the LLM
 
 ### Where to place files
 
-Files must be in a directory listed in `ALLOWED_INGEST_PATHS` (configured in `config.py`). By default this is restrictive — **update it for your environment**:
+Files must be in a directory listed in `ALLOWED_INGEST_PATHS` (configured in `config.py`). By default, this is set to your home directory — **narrow it for your environment**:
 
 ```python
-# config.py
+# config.py — Linux / macOS
 ALLOWED_INGEST_PATHS = [
     "/home/youruser/Documents/",
     "/home/youruser/projects/",
     "/data/shared/",
 ]
+
+# config.py — Windows
+ALLOWED_INGEST_PATHS = [
+    "C:\\Users\\youruser\\Documents\\",
+    "C:\\Users\\youruser\\projects\\",
+    "D:\\shared\\",
+]
 ```
 
-Any path outside these directories will be rejected with an error. This is a security measure to prevent unintended file access.
+Any path outside these directories will be rejected with an error. This is a security measure to prevent unintended file access. Paths are validated using `os.path.abspath()`, so both forward slashes and backslashes work on Windows.
 
 ### Supported file formats
 
@@ -219,7 +226,9 @@ cd Qdrant-MCP
 
 # Create and activate a virtual environment (recommended)
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Linux / macOS
+# .venv\Scripts\activate         # Windows (PowerShell)
+# .venv\Scripts\activate.bat     # Windows (cmd)
 
 # Install dependencies
 pip install -r requirements.txt
@@ -365,6 +374,7 @@ EMBED_DOCUMENT_PREFIX=
 
 Add to your `~/.mcp.json` (or project-level `.mcp.json`):
 
+**Linux / macOS:**
 ```json
 {
   "mcpServers": {
@@ -380,7 +390,23 @@ Add to your `~/.mcp.json` (or project-level `.mcp.json`):
 }
 ```
 
-> **Note:** Point `command` to the venv Python binary so Claude Code uses the isolated environment. If you installed dependencies globally or use Docker, `python3` works instead.
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "qdrant": {
+      "command": "C:\\path\\to\\Qdrant-MCP\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "qdrant_mcp", "--transport", "stdio"],
+      "cwd": "C:\\path\\to\\Qdrant-MCP",
+      "env": {
+        "PYTHONPATH": "C:\\path\\to\\Qdrant-MCP"
+      }
+    }
+  }
+}
+```
+
+> **Note:** Point `command` to the venv Python binary so Claude Code uses the isolated environment. If you installed dependencies globally or use Docker, `python3` (or `python` on Windows) works instead.
 
 Restart Claude Code to pick up the new server.
 
