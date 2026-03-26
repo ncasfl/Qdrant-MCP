@@ -1,0 +1,20 @@
+services:
+  qdrant-mcp:
+    build:
+      context: /home/chohman
+      dockerfile: qdrant-mcp/Dockerfile
+    container_name: qdrant-mcp
+    restart: unless-stopped
+
+    # Host networking — needs access to Qdrant :6333 and Ollama :11434 on localhost
+    network_mode: host
+
+    environment:
+      - TZ=America/Chicago
+
+    # Resource constraints
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "2"

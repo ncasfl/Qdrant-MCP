@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment / secrets
+.env
+*.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker build cache
+.docker/
+
+# Test artifacts
+tests/__pycache__/
+.pytest_cache/
+
+# RAG lib is imported at runtime, not bundled in repo
+# (lives at ~/rag/lib/ on the host)
